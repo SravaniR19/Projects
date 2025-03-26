@@ -1,0 +1,615 @@
+---
+title: "How Demographics Affect COVID-19-Related Anxiety"
+output: html_notebook
+---
+########################### PROLOG #######################################################
+Project: How Demographics Affect COVID-19-Related Anxiety 
+Purpose: To determine how factors such as age, sex, and income group affect COVID-19 related anxiety. 
+Data: https://doi.org/10.1038/s41597-022-01563-4 
+Author: Samantha Zocher, Sravani Pendyala, Preethi Nigam Errala, Sai Ganesh Vugge, Nuthan Vikas Reddy Matta
+Created: 4/22/2024
+Latest edit: 5/5/2024
+##########################################################################################
+
+The current research focuses on how various demographic characteristics affect the anxiety related symptoms in COVID-19 patients. To examine this, we have chosen a dataset derived from a study conducted in Turkey on a sample of 2,868 participants.
+
+First, the required packages were imported.
+
+```{r}
+library("dplyr")
+library("tidyverse")
+library("odds.n.ends")
+library("tableone")
+```
+
+Upon loading the packages, the dataset was imported and read.
+
+```{r}
+#Loading the data
+COVID_19_data <- read.csv("Data_COVID19_Engl_sh.csv")
+```
+
+```{r}
+view(COVID_19_data)
+```
+
+```{r}
+summary(object = COVID_19_data)
+```
+
+After importing the dataset, we have viewed the varaibles in the file and have checked the statistics of the variables.
+
+
+## Recoding the variables
+
+It can be noted that the dataset consists of categorical variables hence we have recoded the variables to a numeric one for further analysis.
+
+```{r}
+# Recoding and renaming the variables
+
+COVID_19_data_clean <- COVID_19_data %>%
+  select(age, iin, sex, sur1, sur2, sur3, sur4, sur5, sur6, sur7, sur8, sur9, sur10, sur11, sur12, sur13, sur14, sur15, sur16, sur17, sur18, sur19, sur20, sur21, sur22, sur23, sur24, sur25, sur26, sur27, sur28, sur29, sur30) %>%
+  rename(income = iin) %>%
+mutate_at(vars(sur1, sur2, sur3, sur4, sur5, sur6, sur7, sur8, sur9, sur10, sur11, sur12, sur13, sur14, sur15, sur16, sur17, sur18, sur19, sur20),
+             ~ as.numeric(recode_factor(.,  
+                              "None" = 0, 
+                              "Low" = 1, 
+                              "Moderate" = 2, 
+                              "High" = 3))) %>%
+  mutate_at(vars(sur21, sur22, sur23, sur24, sur25, sur26, sur27, sur28, sur29, sur30),
+            ~ as.numeric(recode_factor(.,
+                           "Very slightly or not at all" = 0,
+                           "A little" = 1,
+                           "Moderately" = 2, 
+                           "Quite a bit" = 3, 
+                           "Extremely" = 4))) %>%
+  
+  mutate(anxiety = rowSums(select(.,sur1, sur2, sur3, sur4, sur5, sur6, sur7, sur8, sur9, sur10, sur11, sur12, sur13, sur14, sur15, sur16, sur17, sur18, sur19, sur20, sur21, sur22, sur23, sur24, sur25, sur26, sur27, sur28, sur29, sur30))) %>%
+  select(-sur1, -sur2, -sur3, -sur4, -sur5, -sur6, -sur7, -sur8, -sur9, -sur10, -sur11, -sur12, -sur13, -sur14, -sur15, -sur16, -sur17, -sur18, -sur19, -sur20, -sur21, -sur22, -sur23, -sur24, -sur25, -sur26, -sur27, -sur28, -sur29, -sur30) %>%
+  drop_na(anxiety) %>%
+  mutate(income = as.factor(income)) %>%
+  mutate(income = factor(income, levels = c('0 - 1500', '1500 - 3000', '3000 - 6000', '6000 - 12000', '12000 - 24000', '24000 and above'))) %>%
+   mutate(sex = recode_factor(.x = sex, 
+                            'Other' = NA_character_)) %>%
+  mutate(age = as.numeric(age)) %>%
+  drop_na(age) %>%
+  drop_na(sex)
+
+```
+We have computed the sum of values across rows for columns 'sur1 to sur30' and have stored in a new variable called ‘anxiety’ and then deleted the original columns (sur1 to sur30) from the dataset. Later, we have selected required variables and have assigned them to a new variable named 'COVID_19_data_clean'.
+
+
+```{r}
+summary(COVID_19_data_clean)
+```
+
+Upon recoding the dataset, we have checked the summary of the new cleaned dataset. The new dataset contains only 4 variables showing the mean, median data. It can be noted that the sample contains only adult participants aged between 18 and 65, with an average age of 27 years. The income distribution ranges from lower to higher brackets, with the most common income falling between ‘3000 – 6000’. It can be noted that there are more female participants than male (1855 and 942 respectively). Anxiety levels, calculated from survey items, range from 31 to 108, with a mean of 66.25, indicating a moderate overall level of anxiety. 
+
+##############Creating descriptive statistics table########################################
+
+Use the Shapiro Wilkes test to determine how to report descriptive statistics for age and anxiety 
+
+```{r}
+shapiro.test(COVID_19_data_clean$age)
+```
+
+We reject the null hypothesis that the data is normally distributed. We will report median and IQR for age variable in the table. 
+```{r}
+shapiro.test(COVID_19_data_clean$anxiety)
+
+```
+
+
+Since the p value is < .001, we reject the null hypothesis that the data is normally distributed. We will report median and IQR for anxiety variable in the table. 
+
+Now we will create the table using CreateTableOne
+
+```{r}
+labelled::var_label(x = COVID_19_data_clean) <- c("Age", "Income", "Sex", "Anxiety")
+vars <- c("age", "income", "sex", "anxiety")
+
+descriptive.table <- CreateTableOne(vars = vars, data = COVID_19_data_clean)
+
+print(x = descriptive.table, nonnormal = c("age", "anxiety"), varLabels = TRUE)
+```
+We now have a well formatted table that shows descriptive statistics for the cohort where n = 2,797. 
+
+##########################################################################################
+## Plan for analysis #
+
+T-test (gender and anxiety)
+ANOVA (income and anxiety)
+Linear Regression (age and anxiety)
+
+###############################################################################
+BEGIN T-TEST ANALYSIS BETWEEN GENDER AND ANXIETY
+
+Examine mean anxiety scores by sex to evaluate any potential differences between males and females reaction to COVID-19 related stressors
+```{r}
+#Examine descriptive statistics by sex 
+COVID_19_data_clean%>%
+  group_by(sex) %>%
+  summarize(mean.sex = mean(x = anxiety), 
+            sd.sex = sd(x = anxiety))
+```
+It appears that the female mean anxiety score is higher than the male. 
+
+
+We must check assumptions that the groups are normally distributed before proceeding.
+The assumptions for an independent samples t-test are:
+Continuous variable and two independent groups- our variables meet this criteria
+  Independent observations- the dataset we have selected meets this criteria as The questions don't depend on other observations
+  Normal distribution in each group- We will test this
+  Equal variances for each group- We will test this 
+```{r}
+# graph anxiety scores by sex
+COVID_19_data_clean%>%
+      ggplot(aes(x = anxiety)) +
+      geom_histogram(fill = "#7463AC", col = "white") +
+      facet_grid(cols = vars(sex)) +
+      theme_minimal() +
+      labs(x="Anxiety Score",
+  y="Number of Participants")
+```
+It is possible that these groups could be normally distributed, but it is hard to tell graphically. We can use a more precise statistical test. 
+```{r}
+COVID_19_data_clean %>%
+    group_by(sex) %>%
+   summarize(z.skew = semTools::skew(object = anxiety)[3])
+```
+Both of these z-score values are between -7 and 7, so therefore our male and female anxiety scores are normally distributed. 
+The normality assumption is met. 
+
+We can use Levene's test to see if males and females have equal variance.
+```{r}
+# Performing Levene's test
+car::leveneTest(y = anxiety ~ sex, data = COVID_19_data_clean)
+```
+Our p-value < .001, therefore we reject the null hypothesis that the variances are equal. 
+This assumption is not met. Therefore, after we perform the t-test, we can perform an alternative test. 
+
+
+Beginning independent samples t-test for sex and anxiety
+```{r}
+#As these populations are unrelated, we will use independent t-tests to evaluate any potential differences. 
+sex_ttest <- t.test(formula = COVID_19_data_clean$anxiety ~
+               COVID_19_data_clean$sex)
+
+#View results
+sex_ttest
+```
+NHST STEP 1: Write the null and alternate hypotheses
+
+H0: There is no difference in the anxiety score after COVID 19 between men and women
+H1: There is a difference in the anxiety score between men and women
+
+NHST STEP 2: Compute the test statistic
+Based on our test, t = -6.5014
+
+NHST STEP 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+p < .01
+The value of the test statistic would happen with a probability of much less than 5% if the null hypothesis were true
+
+NHST STEP 4 and 5: Interpret the probability and write a conclusion
+There is sufficient evidence to reject the null hypothesis and conclude there is a difference between the two samples 
+
+Interpretation: There was a statistically significant difference [t(2026.7) = -6.5014, p < .01] in the mean anxiety score between males (m = 64.34) and females in the sample (m  = 67.22). The difference between male and female anxiety score was 2.88 in the sample
+
+```{r}
+#Running Cohen's D test to examine effect size 
+lsr::cohensD(x = anxiety ~ sex,
+      data = COVID_19_data_clean,
+      method = "unequal")
+```
+Cohen's d = 0.2568
+There is a small effect size. 
+
+
+Interpretation: There was a statistically significant difference [t(2026.7) = -6.5014, p < .01] in the mean anxiety score between males (m = 64.34) and females in the sample (m  = 67.22). The difference between male and female anxiety score was 2.88 in the sample. In the overall population, male mean anxiety scores are likely to be between 3.75 and 2.01 lower than the female mean anxiety scores (d = 2.88; 95% CI: -3.75--2.01).
+
+However, since the assumptions were not met, we will have to use an alternative test to see the effect size. Since our variances were unequal, we can use the Kolmogorov-Smirnov test for further exploration. 
+
+NHST STEP 1: Write the null and alternate hypotheses
+
+H0: The distribution of anxiety scores for males and females is the same. 
+HA: The distribution of anxiety scores for males and females is not the same.
+
+NHST STEP 2: Compute the test statistic
+```{r}
+males.anxiety <- COVID_19_data_clean %>%
+filter(sex == "Man") %>%
+pull(var = anxiety)
+females.anxiety <- COVID_19_data_clean %>%
+filter(sex == "Female") %>%
+pull(var = anxiety)
+
+ks.test(x = males.anxiety, y = females.anxiety)
+
+```
+NHST STEP 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+The p-value is well below 0.05. 
+
+NHST STEPS 4 and 5: Interpret the probability and write a conclusion
+
+A Kolmogorov-Smirnov test comparing the anxiety scores for males and females found a statistically significant difference between the two gropus (D = 0.11; p < .05). The distribution of anxiety scores was different between males and females. 
+#######################################################################################
+Beginning analysis of income and anxiety
+
+First, we can investigate descriptive statistics by income
+```{r}
+#Examine descriptive statistics by income
+COVID_19_data_clean%>%
+  drop_na(anxiety) %>%
+              group_by(income) %>%
+              summarize(m.anxiety = mean(x = anxiety),
+              sd.anxiety = sd(x = anxiety))
+```
+Interpretation: From the statistics, it can be seen that the individuals earning between 0 and 1500 have the highest mean anxiety score of 67.5, with a moderate standard deviation of 11.5. Anxiety levels appear to decrease slightly as income increases, with those earning between 6000 and 12000 and those earning 12000 to 24000 both having similar mean anxiety scores of 64.7. People earning 6000 to 12000 and 12000 to 24000 have the lowest average anxiety score. Overall, the findings present a complex relationship between income and anxiety, with higher income range associated with slightly lower anxiety levels.
+
+
+Next, we can visualize the data with a histogram
+
+```{r}
+# Histogram plot
+
+COVID_19_data_clean%>%
+drop_na(income, anxiety) %>%
+  ggplot(aes(x = anxiety, fill = income)) +
+  geom_histogram(alpha = 0.6, position = "identity", bins = 20) +
+  facet_wrap(~ income, scales = "free_x") +
+  scale_fill_brewer(palette = "Spectral") +
+  theme_minimal() +
+  labs(x = "anxiety", y = "income")
+```
+
+Interpretation: It can be observed that income categories ranging from 1500-3000, and 3000-6000 have the highest anxiety rate, followed by 6000-12000 when compared to other income groups, indicating that people with low income have more anxiety rate than people with higher income. A minimal or low levels of anxiety can be seen in the income groups 12000-24000 and 24000 and above, suggesting that there might be a correlation between higher income and lower anxiety levels, however, it does not imply any causation. 
+
+
+####################Understanding and Conducting One-way ANOVA###################
+
+
+```{r}
+# Performing one-way Anova
+anxiety.by.income <- oneway.test(formula = anxiety ~ income,
+                                 data = COVID_19_data_clean,
+                                 var.equal =TRUE)
+```
+
+```{r}
+anxiety.by.income
+```
+
+Interpretation:
+
+* The probability of an F-statistic this large or larger if the null were true, the p-value reported in the output is 0.001158.
+* As the p-value is less than 0.05, the F-statistics would be considered statistically significant.
+
+
+######################NHST for ANOVA#####################
+
+Step-1: Null and alternative hypotheses
+
+HO: There is no difference in the anxiety score after COVID 19 across income.
+
+HA: There is a difference in the anxiety score across income.
+
+Step-2 : Compute the test statistic
+
+```{r}
+anxiety.by.income
+```
+* Based on our test, the F-statistics is 4.0476
+
+Step-3 : Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+* The p-value of F-statistic is 0.001158 which is less than 0.05.
+* The value of an F-statistic being at least this large happens a tiny     percentage of the time when the null hypothesis is true.
+
+Step-4 and 5 : Interpret the probability and write a conclusion
+
+* With a p-value < 0.01, the ANOVA indicates that there is a difference between anxiety and income.
+
+REPORT:
+
+The test showed that there is a significant difference in anxiety levels across individuals from income groups [F(5, 2791) = 4.0476; p = 0.001158]. This indicates that the how much anxiety people experience after COVID-19 seems to vary depending on their income status.
+
+
+#############################Performing post hoc tests##################
+
+* Using BONFERRONI test, it is a type post hoc test
+* Bonferroni test is a pairwise test conducts a t-test   for each pair of means but adjusts the threshold for statistical significance to ensure that there is a small enough risk of Type I error.
+* In this test we are using pairwise.t.test() function.
+* There are several arguments, x = for continuous variable, g = categorical variable, and the p.adj, which can be set as bonf for Bonferroni
+
+
+```{r}
+# find differences between income and anxiety
+bonf.income.by.anxiety <- pairwise.t.test(x = COVID_19_data_clean$anxiety,
+                                    g = COVID_19_data_clean$income,
+                                    p.adj = "bonf")
+```
+
+```{r}
+bonf.income.by.anxiety
+```
+Interpretation: For further analysis, we have performed the post-hoc test to find out which means are statistically significant from each other. The significant difference was found only in one income group ranged '6000-12000' (p < 0.05), this group tend to have lower anxiety levels compared to those earning 0 - 1500 (p = 0.0016), 1500 - 3000 (p = 0.0216), and 3000 - 6000 (p = 0.0437). There are no significant differences among the means of all the other groups.
+
+
+########################Checking assumptions##################
+Assumptions: 
+Continuous variable and independent groups
+- anxiety it a continuous variable and income groups are independent of eachother. These assumptions are met. 
+Independent Observations
+- This assumption is met as previously established. 
+Normal distribution in each group
+- We can test for each group by a visualization and further with the Shapiro Wilkes test 
+```{r}
+ COVID_19_data_clean%>%
+      drop_na(anxiety) %>%
+      ggplot(aes(x = anxiety)) +
+      geom_density(aes(fill = income)) +
+      facet_wrap(facets = vars(income), nrow = 2) +
+      scale_fill_brewer(palette = "Spectral", guide = "none") +   
+  #scale_fill_brewer(palette = "Spectral", guide = FALSE) +
+  theme_minimal() +
+  labs(x = "Anxiety",
+   y = "Probability density")
+```
+
+Interpretation:
+
+* None of the groups are normally distributed based on the density plot except 2 groups (no skew is observed in the income groups 1500-3000 and 3000-6000) and slight right skew distribution can be seen in the category 6000-12000.
+
+* The Shapiro-Wilk test was testing the null hypothesis that the data are normally distributed.
+
+
+```{r}
+# statistical test of normality for groups
+COVID_19_data_clean %>%
+group_by(income) %>%
+summarize(shapiro.pval = shapiro.test(x = anxiety)$p.value)
+```
+
+Interpretation:
+
+* Based on the p-values, all four of the Shapiro-Wilk tests were statistically significant, indicating that the null hypothesis for this test was rejected in four groups expect one group.
+* The p-value of income 24000 and above is 0.103, which is greater than 0.05, we fail to reject the null hypotheses.  
+
+Not all groups are normally distributed, therefore this assumption is not met. 
+
+
+###########################Homogeneity of variances assumptions##############
+We can test the equal variances assumption with Levene's test
+```{r}
+# equal variances for anxiety by income group
+car::leveneTest(y = anxiety ~ income, data = COVID_19_data_clean, center = mean)
+```
+Interpretation:
+
+* The p-value for levene's test is 0.01507, which is less than 0.05. Hence rejecting the null hypotheses; The variance of anxiety statistically significantly different across income groups.
+* The ANOVA fails the assumption of homogeneity of variances.
+
+
+####################ALTERNATIVE TEST ##############
+
+KRUSKAL-WALLIS TEST
+
+As our income variable failed the normality assumption, we can use the Kruskal-Wallis test to compare 3 or more groups. 
+
+NHST PROCESS
+
+Step-1: Null and Alternative hypotheses
+
+HO: There is no difference in the anxiety score after COVID 19 across income.
+HA: There is a difference in the anxiety score across income.
+
+Step-2 : Compute the test statistics
+
+```{r}
+#compare anxiety by income
+kw.anxiety.by.income <- kruskal.test(formula = anxiety ~ income,
+                                     data = COVID_19_data_clean)
+```
+
+```{r}
+kw.anxiety.by.income
+```
+
+Step-3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true)
+
+* The p-value is 0.0009849 which is less than 0.05.
+
+Step 4 and 5 : Interpret the probability and write a conclusion
+
+* Based on the results we can found that there is difference in anxiety levels across income status [H(5) = 20.55; p < .05]. Like the ANOVA results, the K-W test identifies whether there is a difference somewhere among the means, but it does not identify which groups are different from one another. For K-W, the Dunn’s post hoc test of multiple comparisons is useful for identifying which groups are statistically significantly different from which other groups.
+
+Dunn’s post hoc test for Kruskal-Wallis
+
+```{r}
+# post hoc test for anxiety by income
+dunn.anxiety.by.income <- dunn.test::dunn.test(x = COVID_19_data_clean$anxiety, g = COVID_19_data_clean$income, method = "bonferroni")
+```
+Interpretation: The Kruskal-Wallis chi-squared statistic is 20.55 with 5 degrees of freedom, resulting in a p-value of 0.0009849, indicating that there is a significant difference in anxiety levels across income groups. Individuals earning between 0 - 1500 and 6000 - 12000 show significantly different levels of anxiety (p < 0.05). However, no significant differences were found between individuals earning 3000 - 6000 and 12000 - 24000, or between any other income groups (p > 0.05).
+
+
+## Effect size for Kruskal-Wallis * Eta-squared works for Kruskal-Wallis (Cohen, 2008).
+The cutoff values are the same as for the omega-squared: η2 = .01 to η2 < .06 is a small effect η2 = .06 to η2 < .14 is a medium effect η2 ≥ .14 is a large effect.
+
+ηH2=(20.5501−6+1)/(2797−6)= 0.00557 
+              where 20.5501 - H test statistic 
+              6 - Income groups
+                    2797 observations
+                    
+Interpretation: There was a small effect size for the relationship between income groups and anxiety rate (η2 = 0.0056).
+                  
+##########################################################################################
+Examining the relationship between age and anxiety with a linear regression model 
+
+First, we can visualize the data using a scatter plot
+```{r}
+scatterplot.age <- COVID_19_data_clean %>%
+  ggplot(aes(x = age, y = anxiety))+ 
+  geom_point(color = "blue") + 
+  theme_minimal() + 
+  labs(x = "Age of Participant", y = "Anxiety Score") +
+  ggtitle("Scatter Plot of Anxiety Scores by Age")
+  
+#Display the scatter plot
+scatterplot.age
+```
+The resulting scatter plot indicates there are more younger participants, but there is no clear trend in the scores in relation to age. 
+
+
+We can add a Loess curve to better understand any existing trends. 
+```{r}
+# Checking the distribution of data using LOESS curve
+scatterplot.age.loess <- COVID_19_data_clean %>%
+  ggplot(aes(x = age, y = anxiety)) +
+  geom_point(size = 2, color = "#7463AC", alpha = 0.6) +
+  geom_smooth(aes(color = "Linear fit line"), method = "lm", se = FALSE) +
+  geom_smooth(aes(color = "Loess curve"), se = FALSE) +
+  theme_minimal() +
+  labs(y = "Anxiety", x = "Age") +
+  scale_color_manual(values = c("gray60", "deeppink"), name = "") +
+  scale_size_manual(values = 2, name = "")
+
+scatterplot.age.loess
+```
+
+Interpretation: From the graph, it is evident that the curve is relatively flat, indicating that anxiety levels do not significantly increase or decrease with age. The LOESS curve is parallel to a linear fit line, suggesting that anxiety levels change little across the age range.
+
+
+```{r}
+# # correlation between age and anxiety
+COVID_19_data_clean %>%
+  summarize(cor.anx = cor(x = age,
+                                   y = anxiety),
+                                   samp.n = n())
+```
+Interpretation: The correlation was negative (r=-0.12), indicating a weak negative correlation between age and anxiety variables.
+This means that as age increases in the sample, anxiety scores may decrease. 
+
+We can examine this relationship further by creating a regression model to explore the relationship between the variables age and anxiety.
+
+```{r}
+# linear regression model
+anxiety.by.age <- lm(anxiety ~ age, data = COVID_19_data_clean)
+summary(object = anxiety.by.age)
+```
+
+NHST Step 1: Write the null and alternate hypotheses 
+
+H0: There is no significant relationship between age and anxiety.
+
+HA: There is a relationship between age and anxiety.
+
+NHST Step 2: Compute the test statistic The test statistic for this model is F and its value is F(1, 2795) = 45.4.
+
+NHST Step 3: Calculate the probability that your test statistic is at least as big as it is if there is no relationship (i.e., the null is true) There is a tiny probability (p < .001) of an F is big(45.4) if the null hypothesis were true.
+
+NHST Steps 4 and 5: Interpret the probability and write a conclusion Given the tiny p-value, we rejected the null hypothesis in favor of the alternate hypothesis that the age can be a determining factor in predicting the anxiety rate in individuals.
+
+
+Interpretation: The model would predict the rate of anxiety according to the age. It appears that the anxiety levels decrease by an estimated -0.153 units as the age increases by year. The p-value from the results shows that is it less than the threshold value (<0.05), hence indicating that there is a statistically significant (negative) relationship between these two variables meaning that the model is  statistically significant. However, the model's coefficient of determination (R-squared) is low (0.01598), implying that age accounts for only a small portion of the variance in anxiety levels. These results suggest that the people aged from 18 to 50 tend to have more anxiety symptoms than people who are aged above 50 to 64 years.
+
+
+```{r}
+# confidence interval for regression parameters
+ci.anxiety.rate.by.age <- confint(object = anxiety.by.age)
+
+ci.anxiety.rate.by.age
+```
+
+Interpretation: The estimated 95% confidence interval for the slope coefficient (-0.15347) ranges from -0.1981367 to -0.1088095, suggesting that the anxiety rate falls in this range. The model was statistically significant in predicting the anxiety rate [F(2795),  p-value: 1.946e-11] indicating that the age parameter can help improve predict the anxiety rate in individuals.
+
+Begin testing for assumptions. A simple linear regression must meet 6 assumptions
+Assumption 1: Independent assumptions
+- this assumption is met as the data has been collected reasonably 
+Assumption 2: Continuous outcome assumption
+- the outcome variable (anxiety score) is continuous, so this assumption is met. 
+Assumption 3: Checking the linearity assumption
+- Examining the scatterplot.age.loess, we can see the loess line almost matches the linear fit line. However, it does not match and therefore this assumption fails. 
+Assumption 4: Homoscedasticity assumption
+- We will use the Breusch-Pagan test to check this assumption
+```{r}
+# testing for equal variance
+const.var.test <- lmtest::bptest(formula = anxiety ~ age, data = COVID_19_data_clean)
+const.var.test
+
+```
+Interpretation: The Breusch-Pagan test statistic has a tiny p-value (BP = 23.56; p < 0.001), indicating that the null hypothesis of constant variance would be rejected. 
+This assumption is not met 
+
+Assumption 5: Testing the independence of residuals assumption        
+- This can be accomplished using the Durbin-Watson test
+
+```{r}
+# test independence of residuals
+lmtest::dwtest(formula = anxiety.by.age)
+```
+
+Interpretation: The p-value was 0.9006, so the null hypothesis is not rejected. This means the residuals are independent. 
+Hence, this assumption was met.
+
+Assumption 6: Testing the normality of residuals assumption
+
+```{r}
+histogram.residuals <- data.frame(anxiety.by.age$residuals) %>%
+    ggplot(aes(x = anxiety.by.age.residuals)) +
+    geom_histogram(fill = "#7463AC", col = "white") +
+  theme_minimal() + 
+  labs(x = "Anxiety by Age residuals", y = "Count")
+
+histogram.residuals
+```
+
+Interpretation: The histogram suggests the residuals are right-skewed.
+- This final assumption is not met. 
+A simple linear regression may not explain any relationship between age and anxiety scores in our sample. 
+
+
+Adding variables to the model:
+
+We have created a larger model including multiple predictors to determine if this can help better in predicting the anxiety levels in individuals. 
+
+```{r}
+# Creating lm model for multiple predictors
+
+full.model <- lm(anxiety ~ age + income, data = COVID_19_data_clean)
+full.model
+```
+
+```{r}
+summary(object = full.model)
+```
+Interpretation: The model was statistically significant, with an F-statistic of F(6, 2790 = 8.867 and a p-value of < 0.01. The Radj2=0.0166 indicated that 1.16% of the variation accounted for by this model that has both anxiety and income in it, which is slight higher than the Radj2 from the previous model. The residual standard error remains consistent, indicating similar prediction accuracy as baseline model.
+
+```{r}
+confint(full.model)
+```
+
+Interpretation: A linear regression model including age and income status of a person to explain the rate of anxiety was statistically significantly better than a baseline model at explaining the outcome [F(2, 497) = 58.88]. The 95% confidence interval for the coefficient suggested that for every one-year increase in age, anxiety levels decrease between 0.09 and 0.18 units. Similarly, income groups also showed different effects on anxiety, with individuals earning between 1500 and 3000 experiencing fluctuations between 2.05 and 1.88 units. Those earning between 6000 and 12000 experienced greater fluctuations, while those earning $24000 and above experienced the widest range of potential impacts.
+Overall, the results suggest that older people and individuals earning more have less anxiety levels when compared to younger individuals and individuals earning less income.
+
+
+We can perform some diagnostics on the model to see if any outlier values are influencing the regression. 
+To begin, we can add look at standardized residuals and predicted values. 
+
+```{r}
+linearregression.diagnosis.final <- COVID_19_data_clean %>%
+mutate(standardres = rstandard(model = full.model)) %>%
+mutate(predicted = predict(object = full.model))
+
+# get a subset of individuals with large standardized residuals
+linearregression.diagnosis.final %>%
+filter(abs(x = standardres) > 1.96) %>%
+  select(age, anxiety, income, standardres, predicted)
+```
+
+
+132 people in the sample had large standardized residuals. These people may be influencing the model. 
+
+While the linear regression had some issues and did not meet assumptions, other parts of this analysis was meaningful for advancing anxiety research regarding COVID 19. Further data may be used to see how age and income together influences COVID related anxiety. 
+
+
